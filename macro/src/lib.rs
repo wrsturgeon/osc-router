@@ -64,6 +64,9 @@ pub fn osc(ts: TokenStream) -> TokenStream {
                 TokenTree::Ident(Ident::new("Error", Span::call_site())),
             ]),
         )),
+        TokenTree::Punct(Punct::new('-', Spacing::Joint)),
+        TokenTree::Punct(Punct::new('>', Spacing::Alone)),
+        TokenTree::Punct(Punct::new('!', Spacing::Alone)),
         TokenTree::Group(Group::new(
             Delimiter::Brace,
             TokenStream::from_iter([

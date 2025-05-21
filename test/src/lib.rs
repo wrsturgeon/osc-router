@@ -27,3 +27,25 @@ fn conflict() {}
 fn no_comma(_: i32) {}
 
 fn last_one(_: f32, _: i32) {}
+
+osc_router::osc! {
+    #[inline]
+    pub async fn your_fn_name() -> ! {
+        pre => {
+            a => f(),
+            b => g(int32),
+            c => h(float32, int32),
+        }
+        prefix => {
+            hello => goodbye(),
+        }
+    }
+}
+
+fn f() {}
+
+fn g(_: i32) {}
+
+fn h(_: f32, _: i32) {}
+
+fn goodbye() {}
