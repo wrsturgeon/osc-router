@@ -443,20 +443,6 @@ pub(crate) enum Arg {
     PathInteger(Ident),
 }
 
-/*
-#[derive(Debug)]
-pub(crate) enum Untangling {
-    Stop(Vec<TokenTree>),
-    Go(BTreeMap<Vec<u8>, MaybeLeaf>),
-}
-
-#[derive(Debug)]
-pub(crate) enum Parser {
-    Call(Vec<TokenTree>),
-    Case(BTreeMap<u8, Parser>),
-}
-*/
-
 #[derive(Debug)]
 pub(crate) struct Parser {
     cases: BTreeMap<Pattern, ParserState>,
@@ -483,7 +469,7 @@ impl Hierarchy {
         // *after* the first path has been fully added (again, DFS).
 
         let mut cases = BTreeMap::<Pattern, ParserState>::new();
-        let () = incrementalize(self, &mut cases, String::new());
+        let () = parse_slash_etc(MaybeLeaf::Subtree(self), &mut cases, String::new());
         Parser {
             cases,
             catch: String::new(),
@@ -501,282 +487,156 @@ impl Match {
     }
 }
 
+impl Parser {
+    #[inline]
+    pub(crate) fn into_tokens(self) -> impl IntoIterator<Item = TokenTree> {
+        let v: Vec<_> = todo!("Parser::into_tokens: {self:#?}");
+        v
+    }
+}
+
 #[inline]
-fn incrementalize(
-    Hierarchy { containers }: Hierarchy,
+fn parse_slash_etc(
+    maybe_leaf: MaybeLeaf,
     cases: &mut BTreeMap<Pattern, ParserState>,
     mut so_far: String,
 ) {
-    let () = so_far.push('/');
-    let entry = cases.entry(Pattern::ByteChar(b'/'));
-    for (k, v) in containers {
-        match k {
-            Match::Name(k) => {
-                let mut k: Vec<_> = k.bytes().rev().map(Pattern::ByteChar).collect();
-                let Some(c) = k.pop() else {
-                    panic!("Empty OSC container name after `{so_far}`");
-                };
-                let Pattern::ByteChar(c) = c else {
-                    unreachable!()
-                };
-                let mut so_far = so_far.clone();
-                let () = so_far.push(char::from(c));
+    match maybe_leaf {
+        MaybeLeaf::Leaf {
+            fn_path_head,
+            fn_path_tail,
+            fn_args,
+        } => call_leaf(
+            fn_path_head,
+            fn_path_tail,
+            fn_args,
+            Pattern::ByteChar(b'/'),
+            cases,
+            so_far,
+        ),
+        MaybeLeaf::Subtree(Hierarchy { containers }) => {
+            parse_subtree(Pattern::ByteChar(b'/'), cases, containers, so_far)
+        }
+    }
+}
 
-                let mut after_slash = BTreeMap::new();
-                let entry = after_slash.entry(Pattern::ByteChar(c));
-                let () = merge(entry, k, v, so_far.clone());
+#[inline]
+fn call_leaf(
+    fn_path_head: Ident,
+    fn_path_tail: Vec<Ident>,
+    fn_args: Vec<Arg>,
+    pattern: Pattern,
+    cases: &mut BTreeMap<Pattern, ParserState>,
+    mut so_far: String,
+) {
+    match cases.entry(pattern) {
+        Entry::Vacant(vacant) => {
+            let _: &mut _ = vacant.insert(ParserState::Complete(TokenStream::from_iter(
+                core::iter::once(TokenTree::Ident(fn_path_head))
+                    .chain(fn_path_tail.into_iter().flat_map(|id| {
+                        [
+                            TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                            TokenTree::Ident(id),
+                        ]
+                    }))
+                    .chain(core::iter::once(TokenTree::Group(Group::new(
+                        Delimiter::Parenthesis,
+                        TokenStream::from_iter([TokenTree::Ident(Ident::new(
+                            "TODO",
+                            Span::call_site(),
+                        ))]),
+                    )))),
+            )));
+        }
+        Entry::Occupied(occupied) => panic!(
+            "Ambiguous OSC routing: `{so_far}` could either stop parsing and call or continue with {occupied:#?}"
+        ),
+    }
+}
 
-                match entry {
-                    Entry::Vacant(ref mut vacant) => {
-                        let _: &mut _ = vacant.insert(ParserState::Incomplete(Parser {
-                            cases: after_slash,
-                            catch: so_far.clone(),
-                        }));
-                    }
-                    Entry::Occupied(ref mut occupied) => {
-                        match *occupied.get_mut() {
-                            ParserState::Complete(ref mut complete) => TODO,
-                            ParserState::Incomplete(ref mut incomplete) => TODO,
-                            ParserState::Assign(ref mut incomplete) => TODO,
-                        }
-                        todo!("shit your pants")
-                    }
-                }
-            }
-            Match::Integer(k) => {
-                // let k = Pattern::Integer(k);
-                // let entry = after_slash.entry(k.clone());
-                // let k = vec![k];
-                // let () = merge(entry, k, v, so_far.clone());
-
-                /*
-                cases.insert(
-                    Pattern::Integer(k.clone()),
-                    ParserState::Assign {
-                        var_name: k,
-                        continuation: Parser {
-                            cases: todo!(),
-                            catch: so_far.clone(),
-                        },
-                    },
-                );
-                */
-                todo!()
+#[inline]
+fn get_or_insert_match_case<'cases>(
+    pattern: Pattern,
+    cases: &'cases mut BTreeMap<Pattern, ParserState>,
+    so_far: &mut String,
+) -> &'cases mut BTreeMap<Pattern, ParserState> {
+    let () = match pattern {
+        Pattern::ByteChar(byte) => so_far.push(char::from(byte)),
+        Pattern::Integer(ref name) => {
+            let () = so_far.push('#');
+            so_far.push_str(name)
+        }
+    };
+    match cases.entry(pattern) {
+        Entry::Vacant(vacant) => {
+            let ParserState::Incomplete(Parser {
+                ref mut cases,
+                catch: _,
+            }) = *vacant.insert(ParserState::Incomplete(Parser {
+                cases: BTreeMap::new(),
+                catch: so_far.clone(),
+            }))
+            else {
+                unreachable!()
+            };
+            cases
+        }
+        Entry::Occupied(occupied) => {
+            let extant = occupied.into_mut();
+            match *extant {
+                ParserState::Incomplete(Parser {
+                    ref mut cases,
+                    catch: _,
+                }) => cases,
+                ParserState::Complete(_) => panic!(
+                    "Ambiguous OSC routing: after `{so_far}`, unclear whether to stop or to continue parsing this set of further routes: {extant:#?}"
+                ),
+                ParserState::Assign { .. } => panic!(
+                    "Ambiguous OSC routing: after `{so_far}`, unclear whether to assign an integer or to continue parsing this set of further routes: {extant:#?}"
+                ),
             }
         }
     }
 }
 
 #[inline]
-fn merge(
-    entry: Entry<Pattern, ParserState>,
-    mut tail_reversed: Vec<Pattern>,
-    maybe_leaf: MaybeLeaf,
+fn parse_subtree(
+    pattern: Pattern,
+    cases: &mut BTreeMap<Pattern, ParserState>,
+    containers: BTreeMap<Match, MaybeLeaf>,
     mut so_far: String,
 ) {
-    let Some(pattern) = tail_reversed.pop() else {
-        return match maybe_leaf {
-            MaybeLeaf::Leaf {
-                fn_path_head,
-                fn_path_tail,
-                fn_args,
-            } => match entry {
-                Entry::Vacant(vacant) => {
-                    let _: &mut _ = vacant.insert(ParserState::Complete(
-                        /*
-                        TokenStream::from_iter([
-                            TokenTree::Ident(Ident::new(rust_type, Span::call_site())),
-                            TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                            TokenTree::Ident(Ident::new("from_be_bytes", Span::call_site())),
-                            TokenTree::Group(Group::new(Delimiter::Parenthesis,
-                                TokenStream::from_iter(core::iter::once(TokenTree::Group(Group::new(Delimiter::Bracket,
-                                    TokenStream::from_iter([
-                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                    ])
-                                ))))
-                            )),
-                        ])
-                        */
-                        TokenStream::from_iter(
-                            core::iter::once(TokenTree::Ident(fn_path_head))
-                                .chain(fn_path_tail.into_iter().flat_map(|id| {
-                                    [
-                                        TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                                        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                        TokenTree::Ident(id),
-                                    ]
-                                }))
-                                .chain(core::iter::once(TokenTree::Group(Group::new(
-                                    Delimiter::Parenthesis,
-                                    TokenStream::from_iter([TokenTree::Ident(Ident::new(
-                                        "TODO",
-                                        Span::call_site(),
-                                    ))]),
-                                )))),
-                        ),
-                    ));
+    let cases = get_or_insert_match_case(pattern, cases, &mut so_far);
+
+    for (k, v) in containers {
+        match k {
+            Match::Name(name) => {
+                let mut so_far = so_far.clone();
+                let mut cases: *mut BTreeMap<Pattern, ParserState> = cases;
+                for byte in name.into_bytes() {
+                    cases = get_or_insert_match_case(
+                        Pattern::ByteChar(byte),
+                        unsafe { &mut *cases },
+                        &mut so_far,
+                    );
                 }
-                Entry::Occupied(occupied) => panic!(
-                    "Ambiguous OSC routes: `{so_far}` could either end or follow this existing path: `{occupied:#?}`"
-                ),
-            },
-            MaybeLeaf::Subtree(hierarchy) => match entry {
-                Entry::Vacant(vacant) => {
-                    let mut cases = BTreeMap::new();
-                    let () = incrementalize(hierarchy, &mut cases, so_far.clone());
-                    let _: &mut _ = vacant.insert(ParserState::Incomplete(Parser {
-                        cases,
-                        catch: so_far,
-                    }));
-                }
-                Entry::Occupied(occupied) => panic!(
-                    "Ambiguous OSC routes: `{so_far}` could either continue by parsing a `/` or follow this existing path: `{occupied:#?}`"
-                ),
-            },
-        };
+                let () = parse_slash_etc(v, unsafe { &mut *cases }, so_far);
+            }
+            Match::Integer(name) => {
+                let mut so_far = so_far.clone();
+                let cases = get_or_insert_match_case(Pattern::Integer(name), cases, &mut so_far);
+                let () = parse_slash_etc(v, cases, so_far);
+            }
+        }
+    }
+}
+
+/*
+#[inline]
+fn char_by_char(mut name: String, cases: &mut BTreeMap<Pattern, ParserState>, so_far: String) {
+    let Some(head) = tail.pop() else {
+        panic!("OSC error: empty container name (after `{so_far}`)")
     };
-
-    match entry {
-        Entry::Vacant(vacant) => {
-            let mut cases = BTreeMap::new();
-            {
-                let mut so_far_extn = so_far.clone();
-                let () = match pattern {
-                    Pattern::ByteChar(c) => so_far_extn.push(char::from(c)),
-                    Pattern::Integer(ref name) => {
-                        let () = so_far_extn.push('#');
-                        so_far_extn.push_str(name)
-                    }
-                };
-                let entry = cases.entry(pattern);
-                let () = merge(entry, tail_reversed, maybe_leaf, so_far_extn);
-            }
-            let _: &mut _ = vacant.insert(ParserState::Incomplete(Parser {
-                cases,
-                catch: so_far,
-            }));
-        }
-        Entry::Occupied(occupied) => match *occupied.into_mut() {
-            ParserState::Complete(ref tokens) => panic!(
-                "Ambiguous OSC routes: `{so_far}` could either end or continue and parse (in reverse) `{tail_reversed:#?}`"
-            ),
-            ParserState::Incomplete(Parser {
-                ref mut cases,
-                catch: _,
-            }) => {
-                let () = match pattern {
-                    Pattern::ByteChar(c) => so_far.push(char::from(c)),
-                    Pattern::Integer(ref name) => {
-                        let () = so_far.push('#');
-                        so_far.push_str(name)
-                    }
-                };
-                let entry = cases.entry(pattern);
-                let () = merge(entry, tail_reversed, maybe_leaf, so_far);
-            }
-            ParserState::Assign {
-                ref var_name,
-                ref continuation,
-            } => panic!(
-                "INTERNAL ERROR: OSC name clash with integer (in `merge`) while assigning name `{var_name}` to a digit after `{so_far}`"
-            ),
-        },
-    }
 }
-
-impl Parser {
-    #[inline]
-    pub fn into_tokens(self) -> [TokenTree; 6] {
-        let Self { cases, catch } = self;
-        let mut match_body = TokenStream::new();
-        for (k, v) in cases {
-            match k {
-                Pattern::ByteChar(k) => {
-                    let () = match_body.extend([TokenTree::Literal(Literal::byte_character(k))]);
-                }
-                Pattern::Integer(name) => {
-                    let () = match_body.extend([
-                        TokenTree::Ident(Ident::new("digit", Span::call_site())),
-                        TokenTree::Punct(Punct::new('@', Spacing::Alone)),
-                        TokenTree::Group(Group::new(
-                            Delimiter::Parenthesis,
-                            TokenStream::from_iter(
-                                core::iter::once(TokenTree::Literal(Literal::byte_character(b'0')))
-                                    .chain((b'1'..=b'9').flat_map(|c| {
-                                        [
-                                            TokenTree::Punct(Punct::new('|', Spacing::Alone)),
-                                            TokenTree::Literal(Literal::byte_character(c)),
-                                        ]
-                                    })),
-                            ),
-                        )),
-                    ]);
-                }
-            }
-            let () = match_body.extend([
-                TokenTree::Punct(Punct::new('=', Spacing::Joint)),
-                TokenTree::Punct(Punct::new('>', Spacing::Alone)),
-            ]);
-            let () = match v {
-                ParserState::Complete(tokens) => match_body.extend(tokens),
-                ParserState::Incomplete(inception) => match_body.extend(inception.into_tokens()),
-                ParserState::Assign {
-                    var_name,
-                    continuation,
-                } => {
-                    match_body.extend([
-                        TokenTree::Ident(Ident::new("let", Span::call_site())),
-                        todo!(),
-                    ]);
-                    match_body.extend(continuation.into_tokens())
-                }
-            };
-            let () = match_body.extend(core::iter::once(TokenTree::Punct(Punct::new(
-                ',',
-                Spacing::Alone,
-            ))));
-        }
-        let () = match_body.extend([
-            TokenTree::Ident(Ident::new("unexpected", Span::call_site())),
-            TokenTree::Punct(Punct::new('=', Spacing::Joint)),
-            TokenTree::Punct(Punct::new('>', Spacing::Alone)),
-            TokenTree::Ident(Ident::new("error", Span::call_site())),
-            TokenTree::Group(Group::new(
-                Delimiter::Parenthesis,
-                TokenStream::from_iter([
-                    TokenTree::Literal(Literal::string(&catch)),
-                    TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                    TokenTree::Ident(Ident::new("unexpected", Span::call_site())),
-                ]),
-            )),
-            TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-        ]);
-        [
-            TokenTree::Ident(Ident::new("match", Span::call_site())),
-            TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-            TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-            TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-            TokenTree::Ident(Ident::new("await", Span::call_site())),
-            TokenTree::Group(Group::new(Delimiter::Brace, match_body)),
-        ]
-    }
-}
+*/
