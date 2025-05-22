@@ -130,7 +130,9 @@ fn parse_function_declaration(iter: impl IntoIterator<Item = TokenTree>) -> FnDe
                 ),
             },
             Some(other) => {
-                todo!("Expected a function declaration in an OSC router macro but found {other:#?}")
+                panic!(
+                    "Expected a function declaration in an OSC router macro but found {other:#?}"
+                )
             }
         }
     }
