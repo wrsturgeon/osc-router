@@ -9,6 +9,7 @@ pub fn osc(ts: TokenStream) -> TokenStream {
     let FnDecl {
         attributes,
         fn_name,
+        generics,
         mut arg_stream,
         body,
     } = parse_function_declaration(ts);
@@ -38,6 +39,15 @@ pub fn osc(ts: TokenStream) -> TokenStream {
         TokenTree::Ident(Ident::new("fn", Span::call_site())),
         TokenTree::Ident(fn_name),
         TokenTree::Punct(Punct::new('<', Spacing::Alone)),
+    ]);
+    if !generics.is_empty() {
+        let () = acc.extend(generics);
+        let () = acc.extend(core::iter::once(TokenTree::Punct(Punct::new(
+            ',',
+            Spacing::Alone,
+        ))));
+    }
+    let () = acc.extend([
         TokenTree::Ident(Ident::new("AsyncByte", Span::call_site())),
         TokenTree::Punct(Punct::new(':', Spacing::Alone)),
         TokenTree::Ident(Ident::new("Future", Span::call_site())),
@@ -90,6 +100,7 @@ pub fn osc(ts: TokenStream) -> TokenStream {
 struct FnDecl {
     pub attributes: Vec<TokenTree>,
     pub fn_name: Ident,
+    pub generics: Vec<TokenTree>,
     pub arg_stream: TokenStream,
     pub body: TokenStream,
 }
@@ -169,13 +180,43 @@ fn parse_function_declaration(iter: impl IntoIterator<Item = TokenTree>) -> FnDe
         ident
     };
 
+    let mut generics = vec![];
     let arg_stream = {
         // Expecting parenthesized arguments (but no arguments, so really just `()`):
-        let Some(tree) = iter.next() else {
+        let Some(mut tree) = iter.next() else {
             panic!(
                 "Expected arguments after the function name in an OSC router macro but the macro body ended"
             )
         };
+        if let TokenTree::Punct(ref punct) = tree {
+            if !matches!(punct.as_char(), '<') {
+                panic!(
+                    "Expected arguments after the function name in an OSC router macro but found {tree:#?}"
+                )
+            }
+            let mut angle_bracket_inception: usize = 1;
+            'generics: loop {
+                tree = iter.next().expect(
+                        "Function generics in an OSC router macro missing a closing `>` (maybe off-by-one error?)"
+                );
+                if let TokenTree::Punct(ref punct) = tree {
+                    match punct.as_char() {
+                        '<' => angle_bracket_inception += 1,
+                        '>' => {
+                            angle_bracket_inception -= 1;
+                            if angle_bracket_inception == 0 {
+                                tree = iter.next().expect(
+                                    "Function generics in an OSC router macro missing a closing `>` (maybe off-by-one error?)"
+                                );
+                                break 'generics;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let () = generics.push(tree);
+            }
+        }
         let TokenTree::Group(group) = tree else {
             panic!(
                 "Expected arguments after the function name in an OSC router macro but found {tree:#?}"
@@ -279,6 +320,7 @@ fn parse_function_declaration(iter: impl IntoIterator<Item = TokenTree>) -> FnDe
     FnDecl {
         attributes,
         fn_name,
+        generics,
         arg_stream,
         body,
     }

@@ -2,7 +2,7 @@
 
 osc_router::osc! {
     #[inline]
-    pub async fn osc_server() -> ! {
+    pub async fn osc_server<G: Generic>(_: G) -> ! {
         comma => {
             hyphenated-ident => crate::comma(),
         },
@@ -20,6 +20,8 @@ osc_router::osc! {
         #i => j(#i)
     }
 }
+
+trait Generic {}
 
 fn comma() {}
 
