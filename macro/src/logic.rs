@@ -11,159 +11,328 @@ pub(crate) fn stratify(ts: TokenStream) -> Hierarchy {
 }
 
 #[inline]
-fn stratify_rec(iter: impl IntoIterator<Item = TokenTree>, so_far: Vec<String>) -> Hierarchy {
-    let mut iter = iter.into_iter();
-    let mut containers = BTreeMap::<String, MaybeLeaf>::new();
+fn name_and_arrow(
+    ident: &mut String,
+    mut iter: impl Iterator<Item = TokenTree>,
+    so_far: &[String],
+) {
     loop {
-        match iter.next() {
-            Some(TokenTree::Ident(ident)) => {
-                let mut ident = format!("{ident}");
-
-                'maybe_hyphenated: loop {
-                    // Expecting the `=` in `=>`:
-                    let Some(tree) = iter.next() else {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but the function body ended",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        );
-                    };
-                    let TokenTree::Punct(punct) = tree else {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found {tree:#?}",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        );
-                    };
-                    match punct.as_char() {
-                        '=' => { /* on track to see `=>`: fall through */ }
-                        '-' => {
-                            // Here's the only odd bit:
-                            // we want to allow hyphenation,
-                            // but Rust sees it as a minus sign.
-                            // So, even though we can't tell if there's space around it,
-                            // we want to treat a hyphen between names as one hyphenated name.
-                            let () = ident.push('-');
-                            let Some(tree) = iter.next() else {
-                                panic!(
-                                    "Currently, this OSC library does not allow names ending in hyphens (specifically, we found `{ident}` after `/{}`). If you need to use an identifier ending in a hyphen, please open an issue or a PR.",
-                                    so_far.iter().fold(String::new(), |mut acc, s| {
-                                        let () = acc.push_str(s);
-                                        let () = acc.push('/');
-                                        acc
-                                    })
-                                )
-                            };
-                            let TokenTree::Ident(id) = tree else {
-                                panic!(
-                                    "In an OSC macro (after `/{}`), found a partial name (`{ident}`) with a hyphen, then {tree:#?} (but expected more name after the hyphen).",
-                                    so_far.iter().fold(String::new(), |mut acc, s| {
-                                        let () = acc.push_str(s);
-                                        let () = acc.push('/');
-                                        acc
-                                    })
-                                )
-                            };
-                            let () = ident.push_str(&format!("{id}"));
-                            continue 'maybe_hyphenated;
-                        }
-                        _ => panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found {punct:#?}",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        ),
-                    }
-                    if !matches!(punct.spacing(), Spacing::Joint) {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found {punct:#?}",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        )
-                    }
-                    break 'maybe_hyphenated;
-                }
-
-                {
-                    // Expecting the `>` in `=>`:
-                    let Some(tree) = iter.next() else {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but the function body ended after the `=`",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        );
-                    };
-                    let TokenTree::Punct(punct) = tree else {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found `=` and then {tree:#?}",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        );
-                    };
-                    if !matches!(punct.as_char(), '>') {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found `=` and then {punct:#?}",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        )
-                    }
-                    if !matches!(punct.spacing(), Spacing::Alone) {
-                        panic!(
-                            "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found `=` and then {punct:#?}",
-                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                let () = acc.push_str(s);
-                                let () = acc.push('/');
-                                acc
-                            })
-                        )
-                    }
-                }
-
-                // Expecting either a function with argument types or another match:
+        // Expecting the `=` in `=>`:
+        let Some(tree) = iter.next() else {
+            panic!(
+                "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but the function body ended",
+                so_far.iter().fold(String::new(), |mut acc, s| {
+                    let () = acc.push_str(s);
+                    let () = acc.push('/');
+                    acc
+                })
+            );
+        };
+        let TokenTree::Punct(punct) = tree else {
+            panic!(
+                "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found {tree:#?}",
+                so_far.iter().fold(String::new(), |mut acc, s| {
+                    let () = acc.push_str(s);
+                    let () = acc.push('/');
+                    acc
+                })
+            );
+        };
+        match punct.as_char() {
+            '=' => { /* on track to see `=>`: fall through */ }
+            '-' => {
+                // Here's the only odd bit:
+                // we want to allow hyphenation,
+                // but Rust sees it as a minus sign.
+                // So, even though we can't tell if there's space around it,
+                // we want to treat a hyphen between names as one hyphenated name.
+                let () = ident.push('-');
                 let Some(tree) = iter.next() else {
                     panic!(
-                        "Expected either a function with argument types or another match after `=>` in an OSC macro but the function body ended"
+                        "Currently, this OSC library does not allow names ending in hyphens (specifically, we found `{ident}` after `/{}`). If you need to use an identifier ending in a hyphen, please open an issue or a PR.",
+                        so_far.iter().fold(String::new(), |mut acc, s| {
+                            let () = acc.push_str(s);
+                            let () = acc.push('/');
+                            acc
+                        })
+                    )
+                };
+                let TokenTree::Ident(id) = tree else {
+                    panic!(
+                        "In an OSC macro (after `/{}`), found a partial name (`{ident}`) with a hyphen, then {tree:#?} (but expected more name after the hyphen).",
+                        so_far.iter().fold(String::new(), |mut acc, s| {
+                            let () = acc.push_str(s);
+                            let () = acc.push('/');
+                            acc
+                        })
+                    )
+                };
+                let () = ident.push_str(&format!("{id}"));
+                continue;
+            }
+            _ => panic!(
+                "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found {punct:#?}",
+                so_far.iter().fold(String::new(), |mut acc, s| {
+                    let () = acc.push_str(s);
+                    let () = acc.push('/');
+                    acc
+                })
+            ),
+        }
+        if !matches!(punct.spacing(), Spacing::Joint) {
+            panic!(
+                "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found {punct:#?}",
+                so_far.iter().fold(String::new(), |mut acc, s| {
+                    let () = acc.push_str(s);
+                    let () = acc.push('/');
+                    acc
+                })
+            )
+        }
+
+        {
+            // Expecting the `>` in `=>`:
+            let Some(tree) = iter.next() else {
+                panic!(
+                    "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but the function body ended after the `=`",
+                    so_far.iter().fold(String::new(), |mut acc, s| {
+                        let () = acc.push_str(s);
+                        let () = acc.push('/');
+                        acc
+                    })
+                );
+            };
+            let TokenTree::Punct(punct) = tree else {
+                panic!(
+                    "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found `=` and then {tree:#?}",
+                    so_far.iter().fold(String::new(), |mut acc, s| {
+                        let () = acc.push_str(s);
+                        let () = acc.push('/');
+                        acc
+                    })
+                );
+            };
+            if !matches!(punct.as_char(), '>') {
+                panic!(
+                    "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found `=` and then {punct:#?}",
+                    so_far.iter().fold(String::new(), |mut acc, s| {
+                        let () = acc.push_str(s);
+                        let () = acc.push('/');
+                        acc
+                    })
+                )
+            }
+            if !matches!(punct.spacing(), Spacing::Alone) {
+                panic!(
+                    "Expected `=>` after the OSC container name `{ident}` (after `/{}`) but found `=` and then {punct:#?}",
+                    so_far.iter().fold(String::new(), |mut acc, s| {
+                        let () = acc.push_str(s);
+                        let () = acc.push('/');
+                        acc
+                    })
+                )
+            }
+        }
+
+        return;
+    }
+}
+
+#[inline]
+fn call_or_more_cases(
+    containers: &mut BTreeMap<Match, MaybeLeaf>,
+    to_match: Match,
+    mut iter: impl Iterator<Item = TokenTree>,
+    so_far: &[String],
+) {
+    // Expecting either a function with argument types or another match:
+    let Some(tree) = iter.next() else {
+        panic!(
+            "Expected either a function with argument types or another match after `=>` in an OSC macro but the function body ended"
+        );
+    };
+    match tree {
+        TokenTree::Group(group) => {
+            if !matches!(group.delimiter(), Delimiter::Brace) {
+                panic!(
+                    "Expected either a function with argument types or another match after `=>` in an OSC macro but found {group:#?}"
+                )
+            }
+            let so_far_clone = so_far
+                .iter()
+                .cloned()
+                .chain(core::iter::once(to_match.print()))
+                .collect();
+            let overwritten = containers.insert(
+                to_match.clone(),
+                MaybeLeaf::Subtree(stratify_rec(group.stream(), so_far_clone)),
+            );
+            if let Some(overwritten) = overwritten {
+                panic!(
+                    "Duplicate mapping: {to_match:?} (after `/{}`) already mapped to {overwritten:#?}",
+                    so_far.iter().fold(String::new(), |mut acc, s| {
+                        let () = acc.push_str(s);
+                        let () = acc.push('/');
+                        acc
+                    }),
+                )
+            }
+        }
+        TokenTree::Ident(fn_path_head) => {
+            let mut fn_path_tail = vec![];
+            let mut fn_args = vec![];
+            'modpath: loop {
+                let Some(tree) = iter.next() else {
+                    panic!(
+                        "Expected a function with argument types after `/{}{to_match:?}` but the function body ended after {fn_path_head:#?}",
+                        so_far.iter().fold(String::new(), |mut acc, s| {
+                            let () = acc.push_str(s);
+                            let () = acc.push('/');
+                            acc
+                        }),
                     );
                 };
                 match tree {
-                    TokenTree::Group(group) => {
-                        if !matches!(group.delimiter(), Delimiter::Brace) {
+                    TokenTree::Punct(punct) => {
+                        if !matches!(punct.as_char(), ':') {
                             panic!(
-                                "Expected either a function with argument types or another match after `=>` in an OSC macro but found {group:#?}"
-                            )
+                                "Expected a function with argument types after `/{}{to_match:?}` but found {punct:?} after {fn_path_head:#?}",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
                         }
-                        let so_far_clone = so_far
-                            .iter()
-                            .cloned()
-                            .chain(core::iter::once(ident.clone()))
-                            .collect();
+                        if !matches!(punct.spacing(), Spacing::Joint) {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but found a single colon (maybe should have been a path separator `::`?) after {fn_path_head:#?}",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        }
+                        let Some(tree) = iter.next() else {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but the function body ended after {fn_path_head:#?} and a colon",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        };
+                        let TokenTree::Punct(punct) = tree else {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but found {tree:?} after {fn_path_head:#?} and a colon",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        };
+                        if !matches!(punct.as_char(), ':') {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but found {punct:?} after {fn_path_head:#?} and a colon",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        }
+                        if !matches!(punct.spacing(), Spacing::Alone) {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but found {punct:?} after {fn_path_head:#?} and a colon",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        }
+                        let Some(tree) = iter.next() else {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but the function body ended after {fn_path_head:#?} and a `::`",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        };
+                        let TokenTree::Ident(id) = tree else {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but found {tree:?} after {fn_path_head:#?} and a `::`",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        };
+                        let () = fn_path_tail.push(id);
+                    }
+                    TokenTree::Group(group) => {
+                        if !matches!(group.delimiter(), Delimiter::Parenthesis) {
+                            panic!(
+                                "Expected a function with argument types after `/{}{to_match:?}` but found {group:?} after the path {fn_args:#?}",
+                                so_far.iter().fold(String::new(), |mut acc, s| {
+                                    let () = acc.push_str(s);
+                                    let () = acc.push('/');
+                                    acc
+                                }),
+                            );
+                        }
+                        let mut iter = group.stream().into_iter();
+                        'group_stream: loop {
+                            let Some(tree) = iter.next() else {
+                                break 'group_stream;
+                            };
+                            match tree {
+                                TokenTree::Ident(ident) => {
+                                    let () = fn_args.push(match format!("{ident}").as_str() {
+                                        "int32" => Arg::Int32,
+                                        "float32" => Arg::Float32,
+                                        other => panic!("Unrecognized OSC argument type `{other}`: currently, the only supported types are `int32` and `float32`"),
+                                    });
+                                }
+                                TokenTree::Punct(ref punct) => match punct.as_char() {
+                                    ',' => {}
+                                    '#' => {
+                                        let Some(tree) = iter.next() else {
+                                            panic!("OSC argument list ends in a hashtag")
+                                        };
+                                        let TokenTree::Ident(id) = tree else {
+                                            panic!(
+                                                "Hashtags in OSC argument lists should be followed by a variable name, but a hashtag was followed by {tree:#?}"
+                                            )
+                                        };
+                                        let () = fn_args.push(Arg::PathInteger(id));
+                                    }
+                                    _ => panic!(
+                                        "OSC callback function arguments should be type names like `int32`, but `{tree:#?}` was used as an argument"
+                                    ),
+                                },
+                                _ => panic!(
+                                    "OSC callback function arguments should be type names like `int32`, but `{tree:#?}` was used as an argument"
+                                ),
+                            }
+                        }
                         let overwritten = containers.insert(
-                            ident.clone(),
-                            MaybeLeaf::Subtree(stratify_rec(group.stream(), so_far_clone)),
+                            to_match.clone(),
+                            MaybeLeaf::Leaf {
+                                fn_path_head,
+                                fn_path_tail,
+                                fn_args,
+                            },
                         );
                         if let Some(overwritten) = overwritten {
                             panic!(
-                                "Duplicate mapping: {ident} (after `/{}`) already mapped to {overwritten:#?}",
+                                "Duplicate mapping: {to_match:?} (after `/{}`) already mapped to {overwritten:#?}",
                                 so_far.iter().fold(String::new(), |mut acc, s| {
                                     let () = acc.push_str(s);
                                     let () = acc.push('/');
@@ -171,215 +340,65 @@ fn stratify_rec(iter: impl IntoIterator<Item = TokenTree>, so_far: Vec<String>) 
                                 }),
                             )
                         }
+                        break 'modpath;
                     }
-                    TokenTree::Ident(fn_ident) => {
-                        let mut tokens = vec![TokenTree::Ident(fn_ident)];
-                        'modpath: loop {
-                            let Some(tree) = iter.next() else {
-                                panic!(
-                                    "Expected a function with argument types after `/{}{ident}` but the function body ended after {}",
-                                    so_far.iter().fold(String::new(), |mut acc, s| {
-                                        let () = acc.push_str(s);
-                                        let () = acc.push('/');
-                                        acc
-                                    }),
-                                    TokenStream::from_iter(tokens.into_iter())
-                                );
-                            };
-                            match tree {
-                                TokenTree::Punct(punct) => {
-                                    if !matches!(punct.as_char(), ':') {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found {punct:?} after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    }
-                                    if !matches!(punct.spacing(), Spacing::Joint) {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found a single colon (maybe should have been a path separator `::`?) after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    }
-                                    let () = tokens.push(TokenTree::Punct(punct));
-                                    let Some(tree) = iter.next() else {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but the function body ended after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    };
-                                    let TokenTree::Punct(punct) = tree else {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found {tree:?} after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    };
-                                    if !matches!(punct.as_char(), ':') {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found {punct:?} after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    }
-                                    if !matches!(punct.spacing(), Spacing::Alone) {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found {punct:?} after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    }
-                                    let () = tokens.push(TokenTree::Punct(punct));
-                                    let Some(tree) = iter.next() else {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but the function body ended after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    };
-                                    let TokenTree::Ident(id) = tree else {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found {tree:?} after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    };
-                                    let () = tokens.push(TokenTree::Ident(id));
-                                }
-                                TokenTree::Group(group) => {
-                                    if !matches!(group.delimiter(), Delimiter::Parenthesis) {
-                                        panic!(
-                                            "Expected a function with argument types after `/{}{ident}` but found {group:?} after {}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                            TokenStream::from_iter(tokens.into_iter())
-                                        );
-                                    }
-                                    let () = tokens.push(TokenTree::Group(Group::new(
-                                        Delimiter::Parenthesis,
-                                        TokenStream::from_iter(group.stream().into_iter().flat_map(
-                                            |tree| match tree {
-                                                TokenTree::Ident(ident) => {
-                                                    let rust_type = match format!("{ident}").as_str() {
-                                                        "int32" => "i32",
-                                                        "float32" => "f32",
-                                                        _ => panic!("Unrecognized OSC argument type `{ident}`: currently, the only supported types are `i32` and `f32`"),
-                                                    };
-                                                    vec![
-                                                        TokenTree::Ident(Ident::new(rust_type, Span::call_site())),
-                                                        TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                                                        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                                        TokenTree::Ident(Ident::new("from_be_bytes", Span::call_site())),
-                                                        TokenTree::Group(Group::new(Delimiter::Parenthesis,
-                                                            TokenStream::from_iter(core::iter::once(TokenTree::Group(Group::new(Delimiter::Bracket,
-                                                                TokenStream::from_iter([
-                                                                    TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                                                    TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                                                    TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                                                    TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                                                    TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                                                    TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                                                    TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                                                    TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                                                    TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                                                    TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                                                                    TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                                                                    TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                                                    TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                                                ])
-                                                            ))))
-                                                        )),
-                                                    ]
-                                                },
-                                                TokenTree::Punct(ref punct) => {
-                                                    match punct.as_char() {
-                                                        ',' => vec![tree],
-                                                        _ => panic!("OSC callback function arguments should be type names like `i32`, but `{tree:#?}` was used as an argument"),
-                                                    }
-                                                }
-                                                _ => panic!("OSC callback function arguments should be type names like `i32`, but `{tree:#?}` was used as an argument"),
-                                            }
-                                        )),
-                                    )));
-                                    let overwritten =
-                                        containers.insert(ident.clone(), MaybeLeaf::Leaf(tokens));
-                                    if let Some(overwritten) = overwritten {
-                                        panic!(
-                                            "Duplicate mapping: {ident} (after `/{}`) already mapped to {overwritten:#?}",
-                                            so_far.iter().fold(String::new(), |mut acc, s| {
-                                                let () = acc.push_str(s);
-                                                let () = acc.push('/');
-                                                acc
-                                            }),
-                                        )
-                                    }
-                                    break 'modpath;
-                                }
-                                _ => panic!(
-                                    "Expected a function with argument types after `/{}{ident}` but found {tree:?} after {}",
-                                    so_far.iter().fold(String::new(), |mut acc, s| {
-                                        let () = acc.push_str(s);
-                                        let () = acc.push('/');
-                                        acc
-                                    }),
-                                    TokenStream::from_iter(tokens.into_iter())
-                                ),
-                            }
-                        }
-                    }
-                    other => panic!(
-                        "Expected either a function with argument types or another match after `=>` in an OSC macro but found {other:#?}"
+                    _ => panic!(
+                        "Expected a function with argument types after `/{}{to_match:?}` but found {tree:?} after {fn_path_head:#?} and {fn_args:#?}",
+                        so_far.iter().fold(String::new(), |mut acc, s| {
+                            let () = acc.push_str(s);
+                            let () = acc.push('/');
+                            acc
+                        }),
                     ),
                 }
             }
+        }
+        other => panic!(
+            "Expected either a function with argument types or another match after `=>` in an OSC macro but found {other:#?}"
+        ),
+    }
+}
+
+#[inline]
+fn stratify_rec(iter: impl IntoIterator<Item = TokenTree>, so_far: Vec<String>) -> Hierarchy {
+    let mut iter = iter.into_iter();
+    let mut containers = BTreeMap::<Match, MaybeLeaf>::new();
+    loop {
+        match iter.next() {
+            Some(TokenTree::Ident(ident)) => {
+                let mut ident = format!("{ident}");
+                let () = name_and_arrow(&mut ident, &mut iter, &so_far);
+                let () =
+                    call_or_more_cases(&mut containers, Match::Name(ident), &mut iter, &so_far);
+            }
             Some(TokenTree::Punct(punct)) => {
-                if !matches!(punct.as_char(), ',') {
-                    panic!(
-                        "Expected an identifier representing an OSC container (between `/`s in a path) but found {punct:#?}"
-                    )
+                match punct.as_char() {
+                    ',' => { /* skip */ }
+                    '#' => {
+                        let Some(tree) = iter.next() else {
+                            panic!(
+                                "Expected an identifier representing an OSC variable container after `#` but the function body ended"
+                            )
+                        };
+                        match tree {
+                            TokenTree::Ident(ident) => {
+                                let mut ident = format!("{ident}");
+                                let () = name_and_arrow(&mut ident, &mut iter, &so_far);
+                                let () = call_or_more_cases(
+                                    &mut containers,
+                                    Match::Integer(ident),
+                                    &mut iter,
+                                    &so_far,
+                                );
+                            }
+                            other => panic!(
+                                "Expected an identifier representing an OSC variable container after `#` but found {other:#?}"
+                            ),
+                        }
+                    }
+                    other => panic!(
+                        "Expected an identifier representing an OSC container (between `/`s in a path) but found `{other:#?}` ({punct:#?})"
+                    ),
                 }
             }
             Some(other) => panic!(
@@ -392,13 +411,36 @@ fn stratify_rec(iter: impl IntoIterator<Item = TokenTree>, so_far: Vec<String>) 
 
 #[derive(Debug)]
 pub(crate) struct Hierarchy {
-    pub(crate) containers: BTreeMap<String, MaybeLeaf>,
+    pub(crate) containers: BTreeMap<Match, MaybeLeaf>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum Match {
+    Name(String),
+    Integer(String),
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum Pattern {
+    ByteChar(u8),
+    Integer(String),
 }
 
 #[derive(Debug)]
 pub(crate) enum MaybeLeaf {
-    Leaf(Vec<TokenTree>),
+    Leaf {
+        fn_path_head: Ident,
+        fn_path_tail: Vec<Ident>,
+        fn_args: Vec<Arg>,
+    },
     Subtree(Hierarchy),
+}
+
+#[derive(Debug)]
+pub(crate) enum Arg {
+    Int32,
+    Float32,
+    PathInteger(Ident),
 }
 
 /*
@@ -417,14 +459,18 @@ pub(crate) enum Parser {
 
 #[derive(Debug)]
 pub(crate) struct Parser {
-    cases: BTreeMap<u8, ParserState>,
+    cases: BTreeMap<Pattern, ParserState>,
     catch: String,
 }
 
 #[derive(Debug)]
 pub(crate) enum ParserState {
-    Complete(Vec<TokenTree>),
+    Complete(TokenStream),
     Incomplete(Parser),
+    Assign {
+        var_name: String,
+        continuation: Parser,
+    },
 }
 
 impl Hierarchy {
@@ -436,7 +482,7 @@ impl Hierarchy {
         // merging paths wherever necessary, but only
         // *after* the first path has been fully added (again, DFS).
 
-        let mut cases = BTreeMap::<u8, ParserState>::new();
+        let mut cases = BTreeMap::<Pattern, ParserState>::new();
         let () = incrementalize(self, &mut cases, String::new());
         Parser {
             cases,
@@ -445,55 +491,152 @@ impl Hierarchy {
     }
 }
 
+impl Match {
+    #[inline]
+    pub(crate) fn print(&self) -> String {
+        match *self {
+            Self::Name(ref name) => name.clone(),
+            Self::Integer(ref name) => format!("#{name}"),
+        }
+    }
+}
+
 #[inline]
 fn incrementalize(
     Hierarchy { containers }: Hierarchy,
-    cases: &mut BTreeMap<u8, ParserState>,
+    cases: &mut BTreeMap<Pattern, ParserState>,
     mut so_far: String,
 ) {
-    let mut after_slash = BTreeMap::new();
     let () = so_far.push('/');
+    let entry = cases.entry(Pattern::ByteChar(b'/'));
     for (k, v) in containers {
-        let mut k = k.into_bytes();
-        let () = k.reverse();
-        let Some(c) = k.pop() else {
-            panic!("Empty OSC container name after `{so_far}`");
-        };
-        let mut so_far = so_far.clone();
-        let () = so_far.push(char::from(c));
-        let entry = after_slash.entry(c);
-        let () = merge(entry, k, v, so_far);
-    }
-    let overwritten = cases.insert(
-        b'/',
-        ParserState::Incomplete(Parser {
-            cases: after_slash,
-            catch: so_far.clone(),
-        }),
-    );
-    if let Some(overwritten) = overwritten {
-        panic!("Duplicate mapping of `/` after `{so_far}` (overwrote {overwritten:#?})")
+        match k {
+            Match::Name(k) => {
+                let mut k: Vec<_> = k.bytes().rev().map(Pattern::ByteChar).collect();
+                let Some(c) = k.pop() else {
+                    panic!("Empty OSC container name after `{so_far}`");
+                };
+                let Pattern::ByteChar(c) = c else {
+                    unreachable!()
+                };
+                let mut so_far = so_far.clone();
+                let () = so_far.push(char::from(c));
+
+                let mut after_slash = BTreeMap::new();
+                let entry = after_slash.entry(Pattern::ByteChar(c));
+                let () = merge(entry, k, v, so_far.clone());
+
+                match entry {
+                    Entry::Vacant(ref mut vacant) => {
+                        let _: &mut _ = vacant.insert(ParserState::Incomplete(Parser {
+                            cases: after_slash,
+                            catch: so_far.clone(),
+                        }));
+                    }
+                    Entry::Occupied(ref mut occupied) => {
+                        match *occupied.get_mut() {
+                            ParserState::Complete(ref mut complete) => TODO,
+                            ParserState::Incomplete(ref mut incomplete) => TODO,
+                            ParserState::Assign(ref mut incomplete) => TODO,
+                        }
+                        todo!("shit your pants")
+                    }
+                }
+            }
+            Match::Integer(k) => {
+                // let k = Pattern::Integer(k);
+                // let entry = after_slash.entry(k.clone());
+                // let k = vec![k];
+                // let () = merge(entry, k, v, so_far.clone());
+
+                /*
+                cases.insert(
+                    Pattern::Integer(k.clone()),
+                    ParserState::Assign {
+                        var_name: k,
+                        continuation: Parser {
+                            cases: todo!(),
+                            catch: so_far.clone(),
+                        },
+                    },
+                );
+                */
+                todo!()
+            }
+        }
     }
 }
 
 #[inline]
 fn merge(
-    entry: Entry<u8, ParserState>,
-    mut tail_reversed: Vec<u8>,
+    entry: Entry<Pattern, ParserState>,
+    mut tail_reversed: Vec<Pattern>,
     maybe_leaf: MaybeLeaf,
     mut so_far: String,
 ) {
-    let Some(c) = tail_reversed.pop() else {
+    let Some(pattern) = tail_reversed.pop() else {
         return match maybe_leaf {
-            MaybeLeaf::Leaf(tokens) => match entry {
+            MaybeLeaf::Leaf {
+                fn_path_head,
+                fn_path_tail,
+                fn_args,
+            } => match entry {
                 Entry::Vacant(vacant) => {
-                    let _: &mut _ = vacant.insert(ParserState::Incomplete(Parser {
-                        cases: core::iter::once((b'/', ParserState::Complete(tokens))).collect(),
-                        catch: so_far,
-                    }));
+                    let _: &mut _ = vacant.insert(ParserState::Complete(
+                        /*
+                        TokenStream::from_iter([
+                            TokenTree::Ident(Ident::new(rust_type, Span::call_site())),
+                            TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                            TokenTree::Ident(Ident::new("from_be_bytes", Span::call_site())),
+                            TokenTree::Group(Group::new(Delimiter::Parenthesis,
+                                TokenStream::from_iter(core::iter::once(TokenTree::Group(Group::new(Delimiter::Bracket,
+                                    TokenStream::from_iter([
+                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
+                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
+                                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
+                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
+                                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
+                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
+                                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
+                                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
+                                    ])
+                                ))))
+                            )),
+                        ])
+                        */
+                        TokenStream::from_iter(
+                            core::iter::once(TokenTree::Ident(fn_path_head))
+                                .chain(fn_path_tail.into_iter().flat_map(|id| {
+                                    [
+                                        TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                                        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                                        TokenTree::Ident(id),
+                                    ]
+                                }))
+                                .chain(core::iter::once(TokenTree::Group(Group::new(
+                                    Delimiter::Parenthesis,
+                                    TokenStream::from_iter([TokenTree::Ident(Ident::new(
+                                        "TODO",
+                                        Span::call_site(),
+                                    ))]),
+                                )))),
+                        ),
+                    ));
                 }
                 Entry::Occupied(occupied) => panic!(
-                    "Ambiguous OSC routes: `{so_far}` could either end and call `{tokens:#?}` or follow this existing path: `{occupied:#?}`"
+                    "Ambiguous OSC routes: `{so_far}` could either end or follow this existing path: `{occupied:#?}`"
                 ),
             },
             MaybeLeaf::Subtree(hierarchy) => match entry {
@@ -515,10 +658,16 @@ fn merge(
     match entry {
         Entry::Vacant(vacant) => {
             let mut cases = BTreeMap::new();
-            let entry = cases.entry(c);
             {
                 let mut so_far_extn = so_far.clone();
-                let () = so_far_extn.push(char::from(c));
+                let () = match pattern {
+                    Pattern::ByteChar(c) => so_far_extn.push(char::from(c)),
+                    Pattern::Integer(ref name) => {
+                        let () = so_far_extn.push('#');
+                        so_far_extn.push_str(name)
+                    }
+                };
+                let entry = cases.entry(pattern);
                 let () = merge(entry, tail_reversed, maybe_leaf, so_far_extn);
             }
             let _: &mut _ = vacant.insert(ParserState::Incomplete(Parser {
@@ -528,20 +677,28 @@ fn merge(
         }
         Entry::Occupied(occupied) => match *occupied.into_mut() {
             ParserState::Complete(ref tokens) => panic!(
-                "Ambiguous OSC routes: `{so_far}` could either end and call `{tokens:#?}` or continue and parse `{:#?}`",
-                {
-                    let () = tail_reversed.reverse();
-                    String::from_utf8(tail_reversed)
-                }
+                "Ambiguous OSC routes: `{so_far}` could either end or continue and parse (in reverse) `{tail_reversed:#?}`"
             ),
             ParserState::Incomplete(Parser {
                 ref mut cases,
                 catch: _,
             }) => {
-                let entry = cases.entry(c);
-                let () = so_far.push(char::from(c));
+                let () = match pattern {
+                    Pattern::ByteChar(c) => so_far.push(char::from(c)),
+                    Pattern::Integer(ref name) => {
+                        let () = so_far.push('#');
+                        so_far.push_str(name)
+                    }
+                };
+                let entry = cases.entry(pattern);
                 let () = merge(entry, tail_reversed, maybe_leaf, so_far);
             }
+            ParserState::Assign {
+                ref var_name,
+                ref continuation,
+            } => panic!(
+                "INTERNAL ERROR: OSC name clash with integer (in `merge`) while assigning name `{var_name}` to a digit after `{so_far}`"
+            ),
         },
     }
 }
@@ -552,14 +709,46 @@ impl Parser {
         let Self { cases, catch } = self;
         let mut match_body = TokenStream::new();
         for (k, v) in cases {
+            match k {
+                Pattern::ByteChar(k) => {
+                    let () = match_body.extend([TokenTree::Literal(Literal::byte_character(k))]);
+                }
+                Pattern::Integer(name) => {
+                    let () = match_body.extend([
+                        TokenTree::Ident(Ident::new("digit", Span::call_site())),
+                        TokenTree::Punct(Punct::new('@', Spacing::Alone)),
+                        TokenTree::Group(Group::new(
+                            Delimiter::Parenthesis,
+                            TokenStream::from_iter(
+                                core::iter::once(TokenTree::Literal(Literal::byte_character(b'0')))
+                                    .chain((b'1'..=b'9').flat_map(|c| {
+                                        [
+                                            TokenTree::Punct(Punct::new('|', Spacing::Alone)),
+                                            TokenTree::Literal(Literal::byte_character(c)),
+                                        ]
+                                    })),
+                            ),
+                        )),
+                    ]);
+                }
+            }
             let () = match_body.extend([
-                TokenTree::Literal(Literal::byte_character(k)),
                 TokenTree::Punct(Punct::new('=', Spacing::Joint)),
                 TokenTree::Punct(Punct::new('>', Spacing::Alone)),
             ]);
             let () = match v {
                 ParserState::Complete(tokens) => match_body.extend(tokens),
                 ParserState::Incomplete(inception) => match_body.extend(inception.into_tokens()),
+                ParserState::Assign {
+                    var_name,
+                    continuation,
+                } => {
+                    match_body.extend([
+                        TokenTree::Ident(Ident::new("let", Span::call_site())),
+                        todo!(),
+                    ]);
+                    match_body.extend(continuation.into_tokens())
+                }
             };
             let () = match_body.extend(core::iter::once(TokenTree::Punct(Punct::new(
                 ',',

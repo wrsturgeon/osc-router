@@ -17,6 +17,7 @@ osc_router::osc! {
         }
         pre => {}
         prefix => {}
+        #i => i(#i)
     }
 }
 
@@ -27,6 +28,8 @@ fn conflict() {}
 fn no_comma(_: i32) {}
 
 fn last_one(_: f32, _: i32) {}
+
+fn i(_: u8) {}
 
 osc_router::osc! {
     #[inline]
