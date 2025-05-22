@@ -311,7 +311,7 @@ fn call_or_more_cases(
                                                 "Hashtags in OSC argument lists should be followed by a variable name, but a hashtag was followed by {tree:#?}"
                                             )
                                         };
-                                        let () = fn_args.push(Arg::PathInteger(id));
+                                        let () = fn_args.push(Arg::Env(id));
                                     }
                                     _ => panic!(
                                         "OSC callback function arguments should be type names like `int32`, but `{tree:#?}` was used as an argument"
@@ -440,7 +440,7 @@ pub(crate) enum MaybeLeaf {
 pub(crate) enum Arg {
     Int32,
     Float32,
-    PathInteger(Ident),
+    Env(Ident),
 }
 
 #[derive(Debug)]
@@ -535,7 +535,7 @@ impl Parser {
                                                         TokenTree::Group(Group::new(
                                                             Delimiter::Bracket,
                                                             TokenStream::from_iter(
-                                                                core::iter::repeat([
+                                                                core::iter::repeat_n([
                                                                     TokenTree::Ident(Ident::new(
                                                                         "next_byte",
                                                                         Span::call_site(),
@@ -556,8 +556,7 @@ impl Parser {
                                                                         ',',
                                                                         Spacing::Alone,
                                                                     )),
-                                                                ])
-                                                                .take(4)
+                                                                ], 4)
                                                                 .flatten(),
                                                             ),
                                                         )),
@@ -581,7 +580,7 @@ impl Parser {
                                                         TokenTree::Group(Group::new(
                                                             Delimiter::Bracket,
                                                             TokenStream::from_iter(
-                                                                core::iter::repeat([
+                                                                core::iter::repeat_n([
                                                                     TokenTree::Ident(Ident::new(
                                                                         "next_byte",
                                                                         Span::call_site(),
@@ -602,15 +601,14 @@ impl Parser {
                                                                         ',',
                                                                         Spacing::Alone,
                                                                     )),
-                                                                ])
-                                                                .take(4)
+                                                                ], 4)
                                                                 .flatten(),
                                                             ),
                                                         )),
                                                     )),
                                                 )),
                                             ],
-                                            Arg::PathInteger(name) => vec![TokenTree::Ident(name)],
+                                            Arg::Env(name) => vec![TokenTree::Ident(name)],
                                         })
                                         .into_iter()
                                         .chain(
@@ -893,7 +891,7 @@ fn call_leaf(
     fn_args: Vec<Arg>,
     pattern: Pattern,
     cases: &mut BTreeMap<Pattern, ParserState>,
-    mut so_far: String,
+    so_far: String,
 ) {
     match cases.entry(pattern) {
         Entry::Vacant(vacant) => {

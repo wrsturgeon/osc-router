@@ -9,12 +9,30 @@ pub fn osc(ts: TokenStream) -> TokenStream {
     let FnDecl {
         attributes,
         fn_name,
+        mut arg_stream,
         body,
     } = parse_function_declaration(ts);
     let hierarchy: logic::Hierarchy = logic::stratify(body);
     let parser = hierarchy.parser();
 
     let mut acc: TokenStream = TokenStream::from_iter(attributes);
+    if !arg_stream.is_empty() {
+        let () = arg_stream.extend(core::iter::once(TokenTree::Punct(Punct::new(
+            ',',
+            Spacing::Alone,
+        ))));
+    }
+    let () = arg_stream.extend([
+        TokenTree::Ident(Ident::new("mut", Span::call_site())),
+        TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
+        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("NextByte", Span::call_site())),
+        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("mut", Span::call_site())),
+        TokenTree::Ident(Ident::new("error", Span::call_site())),
+        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("Error", Span::call_site())),
+    ]);
     let () = acc.extend([
         TokenTree::Ident(Ident::new("async", Span::call_site())),
         TokenTree::Ident(Ident::new("fn", Span::call_site())),
@@ -50,20 +68,7 @@ pub fn osc(ts: TokenStream) -> TokenStream {
             ]),
         )),
         TokenTree::Punct(Punct::new('>', Spacing::Alone)),
-        TokenTree::Group(Group::new(
-            Delimiter::Parenthesis,
-            TokenStream::from_iter([
-                TokenTree::Ident(Ident::new("mut", Span::call_site())),
-                TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
-                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("NextByte", Span::call_site())),
-                TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("mut", Span::call_site())),
-                TokenTree::Ident(Ident::new("error", Span::call_site())),
-                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("Error", Span::call_site())),
-            ]),
-        )),
+        TokenTree::Group(Group::new(Delimiter::Parenthesis, arg_stream)),
         TokenTree::Punct(Punct::new('-', Spacing::Joint)),
         TokenTree::Punct(Punct::new('>', Spacing::Alone)),
         TokenTree::Punct(Punct::new('!', Spacing::Alone)),
@@ -85,6 +90,7 @@ pub fn osc(ts: TokenStream) -> TokenStream {
 struct FnDecl {
     pub attributes: Vec<TokenTree>,
     pub fn_name: Ident,
+    pub arg_stream: TokenStream,
     pub body: TokenStream,
 }
 
@@ -163,7 +169,7 @@ fn parse_function_declaration(iter: impl IntoIterator<Item = TokenTree>) -> FnDe
         ident
     };
 
-    {
+    let arg_stream = {
         // Expecting parenthesized arguments (but no arguments, so really just `()`):
         let Some(tree) = iter.next() else {
             panic!(
@@ -175,12 +181,8 @@ fn parse_function_declaration(iter: impl IntoIterator<Item = TokenTree>) -> FnDe
                 "Expected arguments after the function name in an OSC router macro but found {tree:#?}"
             )
         };
-        if !group.stream().is_empty() {
-            panic!(
-                "Expected a function that takes zero arguments in an OSC router macro, but found a non-empty argument list"
-            )
-        }
-    }
+        group.stream()
+    };
 
     {
         let Some(tree) = iter.next() else {
@@ -277,6 +279,7 @@ fn parse_function_declaration(iter: impl IntoIterator<Item = TokenTree>) -> FnDe
     FnDecl {
         attributes,
         fn_name,
+        arg_stream,
         body,
     }
 }
