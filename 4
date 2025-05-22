@@ -485,27 +485,26 @@ impl Match {
 
 impl Parser {
     #[inline]
-    pub(crate) fn match_body(self) -> Vec<TokenTree> {
+    pub(crate) fn into_tokens(self) -> Vec<TokenTree> {
         let Self { cases, catch } = self;
 
         let mut match_body = vec![];
         for (k, v) in cases {
+            let rhs = match v {
+                ParserState::Complete(complete) => vec![
+                    TokenTree::Ident(Ident::new(
+                        "TODO_FN_NAME",
+                        Span::call_site(),
+                    )),
+                ],
+                ParserState::Incomplete(parser) => parser.into_tokens(),
+            };
             match k {
                 Pattern::ByteChar(byte) => {
                     let () = match_body.push(TokenTree::Literal(Literal::byte_character(byte)));
                     let () = match_body.push(TokenTree::Punct(Punct::new('=', Spacing::Joint)));
                     let () = match_body.push(TokenTree::Punct(Punct::new('>', Spacing::Alone)));
-                    match v {
-                        ParserState::Complete(complete) => {
-                            let () = match_body.push(TokenTree::Ident(Ident::new(
-                                "TODO_FN_NAME",
-                                Span::call_site(),
-                            )));
-                        }
-                        ParserState::Incomplete(parser) => {
-                            let () = match_body.extend(parser.into_tokens());
-                        }
-                    }
+                    let () = match_body.extend(rhs);
                     let () = match_body.push(TokenTree::Punct(Punct::new(',', Spacing::Alone)));
                 }
                 Pattern::Integer(name) => {
@@ -526,182 +525,72 @@ impl Parser {
                     let () = match_body.push(TokenTree::Punct(Punct::new('>', Spacing::Alone)));
                     let () = match_body.push(TokenTree::Group(Group::new(
                         Delimiter::Brace,
-                        TokenStream::from_iter(
-                            [
-                                TokenTree::Ident(Ident::new("let", Span::call_site())),
-                                TokenTree::Ident(Ident::new("mut", Span::call_site())),
-                                TokenTree::Ident(Ident::new(&name, Span::call_site())),
-                                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                TokenTree::Ident(Ident::new("u8", Span::call_site())),
-                                TokenTree::Punct(Punct::new('=', Spacing::Alone)),
-                                TokenTree::Ident(Ident::new("digit", Span::call_site())),
-                                TokenTree::Punct(Punct::new('-', Spacing::Alone)),
-                                TokenTree::Literal(Literal::byte_character(b'0')),
-                                TokenTree::Punct(Punct::new(';', Spacing::Alone)),
-                                TokenTree::Punct(Punct::new('\'', Spacing::Joint)),
-                                TokenTree::Ident(Ident::new(&name, Span::call_site())),
-                                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                TokenTree::Ident(Ident::new("loop", Span::call_site())),
+                        TokenStream::from_iter([
+                            TokenTree::Ident(Ident::new(
+                                "let",
+                                Span::call_site(),
+                            )),
+                            TokenTree::Ident(Ident::new(
+                                "mut",
+                                Span::call_site(),
+                            )),
+                            TokenTree::Ident(name),
+                            TokenTree::Punct(Punct::new(
+                                ':',
+                                Spacing::Alone,
+                            )),
+                            TokenTree::Ident(Ident::new(
+                                "u8",
+                                Span::call_site(),
+                            )),
+                            TokenTree::Punct(Punct::new(
+                                '=',
+                                Spacing::Alone,
+                            )),
+                            TokenTree::Ident(Ident::new(
+                                "digit",
+                                Span::call_site(),
+                            )),
+                            TokenTree::Punct(Punct::new(
+                                '-',
+                                Spacing::Alone,
+                            )),
+                            TokenTree::Literal(Literal::byte_character(
+                                b'0',
+                                Span::call_site(),
+                            )),
+                            TokenTree::Punct(Punct::new(
+                                ';',
+                                Spacing::Alone,
+                            )),
+                            TokenTree::Punct(Punct::new(
+                                '\'',
+                                Spacing::Alone,
+                            )),
+                            TokenTree::Ident(Ident::new(
+                                "digits",
+                                Span::call_site(),
+                            )),
+                            TokenTree::Punct(Punct::new(
+                                ':',
+                                Spacing::Alone,
+                            )),
+                            TokenTree::Ident(Ident::new(
+                                "loop",
+                                Span::call_site(),
+                            )),
+                            TokenTree::Group(Group::new(Delimiter::Brace, TokenStream::from_iter([
+                                TokenTree::Ident(Ident::new("match", Span::call_site())),
+                                TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
+                                TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+                                TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                                TokenTree::Ident(Ident::new("await", Span::call_site())),
                                 TokenTree::Group(Group::new(
                                     Delimiter::Brace,
-                                    TokenStream::from_iter([
-                                        TokenTree::Ident(Ident::new("match", Span::call_site())),
-                                        TokenTree::Ident(Ident::new(
-                                            "next_byte",
-                                            Span::call_site(),
-                                        )),
-                                        TokenTree::Group(Group::new(
-                                            Delimiter::Parenthesis,
-                                            TokenStream::new(),
-                                        )),
-                                        TokenTree::Punct(Punct::new('.', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("await", Span::call_site())),
-                                        TokenTree::Group(Group::new(
-                                            Delimiter::Brace,
-                                            TokenStream::from_iter(
-                                                [
-                                                    TokenTree::Ident(Ident::new(
-                                                        "digit",
-                                                        Span::call_site(),
-                                                    )),
-                                                    TokenTree::Punct(Punct::new(
-                                                        '@',
-                                                        Spacing::Alone,
-                                                    )),
-                                                    TokenTree::Group(Group::new(
-                                                        Delimiter::Parenthesis,
-                                                        TokenStream::from_iter([
-                                                            TokenTree::Literal(
-                                                                Literal::byte_character(b'0'),
-                                                            ),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '.',
-                                                                Spacing::Joint,
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '.',
-                                                                Spacing::Joint,
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '=',
-                                                                Spacing::Alone,
-                                                            )),
-                                                            TokenTree::Literal(
-                                                                Literal::byte_character(b'9'),
-                                                            ),
-                                                        ]),
-                                                    )),
-                                                    TokenTree::Punct(Punct::new(
-                                                        '=',
-                                                        Spacing::Joint,
-                                                    )),
-                                                    TokenTree::Punct(Punct::new(
-                                                        '>',
-                                                        Spacing::Alone,
-                                                    )),
-                                                    TokenTree::Group(Group::new(
-                                                        Delimiter::Brace,
-                                                        TokenStream::from_iter([
-                                                            TokenTree::Ident(Ident::new(
-                                                                &name,
-                                                                Span::call_site(),
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '=',
-                                                                Spacing::Alone,
-                                                            )),
-                                                            TokenTree::Literal(
-                                                                Literal::u8_suffixed(10),
-                                                            ),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '*',
-                                                                Spacing::Alone,
-                                                            )),
-                                                            TokenTree::Ident(Ident::new(
-                                                                &name,
-                                                                Span::call_site(),
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '+',
-                                                                Spacing::Alone,
-                                                            )),
-                                                            TokenTree::Group(Group::new(
-                                                                Delimiter::Parenthesis,
-                                                                TokenStream::from_iter([
-                                                                    TokenTree::Ident(Ident::new(
-                                                                        "digit",
-                                                                        Span::call_site(),
-                                                                    )),
-                                                                    TokenTree::Punct(Punct::new(
-                                                                        '-',
-                                                                        Spacing::Alone,
-                                                                    )),
-                                                                    TokenTree::Literal(
-                                                                        Literal::byte_character(
-                                                                            b'0',
-                                                                        ),
-                                                                    ),
-                                                                ]),
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                ';',
-                                                                Spacing::Alone,
-                                                            )),
-                                                            TokenTree::Ident(Ident::new(
-                                                                "continue",
-                                                                Span::call_site(),
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '\'',
-                                                                Spacing::Joint,
-                                                            )),
-                                                            TokenTree::Ident(Ident::new(
-                                                                &name,
-                                                                Span::call_site(),
-                                                            )),
-                                                        ]),
-                                                    )),
-                                                    TokenTree::Punct(Punct::new(
-                                                        ',',
-                                                        Spacing::Alone,
-                                                    )),
-                                                ]
-                                                .into_iter()
-                                                .chain({
-                                                    let ParserState::Incomplete(parser) = v else {
-                                                        panic!("Internal error in the OSC routing library! Please open an issue or a PR if you can. (Reason: Integer path argument not followed by another match.)")
-                                                    };
-                                                    /*
-                                                    let Some(comma) = cases.remove(Pattern::ByteChar(b'/')) else {
-                                                        panic!("Internal error in the OSC routing library! Please open an issue or a PR if you can. (Reason: Integer path argument not followed by a slash.)");
-                                                    };
-                                                    if !cases.is_empty() {
-                                                        panic!("Internal error in the OSC routing library! Please open an issue or a PR if you can. (Reason: Integer path argument not followed exclusively by a slash: other cases are {cases:#?}.)");
-                                                    }
-                                                    */
-                                                    parser.match_body()
-                                                })
-                                            ),
-                                        )),
-                                    ].into_iter()
-                                                .chain([
-                                                            TokenTree::Ident(Ident::new(
-                                                                "break",
-                                                                Span::call_site(),
-                                                            )),
-                                                            TokenTree::Punct(Punct::new(
-                                                                '\'',
-                                                                Spacing::Joint,
-                                                            )),
-                                                            TokenTree::Ident(Ident::new(
-                                                                &name,
-                                                                Span::call_site(),
-                                                            )),
-                                                ])
-                                        ),
+                                    TokenStream::from_iter(match_body),
                                 )),
-                            ]
-                        ),
+                            ])))
+                        ].into_iter().chain(rhs)),
                     )));
                     let () = match_body.push(TokenTree::Punct(Punct::new(',', Spacing::Alone)));
                 }
@@ -722,11 +611,7 @@ impl Parser {
                 TokenTree::Ident(Ident::new("unexpected", Span::call_site())),
             ]),
         )));
-        match_body
-    }
 
-    #[inline]
-    pub(crate) fn into_tokens(self) -> Vec<TokenTree> {
         vec![
             TokenTree::Ident(Ident::new("match", Span::call_site())),
             TokenTree::Ident(Ident::new("next_byte", Span::call_site())),
@@ -735,7 +620,7 @@ impl Parser {
             TokenTree::Ident(Ident::new("await", Span::call_site())),
             TokenTree::Group(Group::new(
                 Delimiter::Brace,
-                TokenStream::from_iter(self.match_body()),
+                TokenStream::from_iter(match_body),
             )),
         ]
     }
