@@ -10,7 +10,7 @@ osc_router::osc! {
             hyphenated-ident => conflict(),
         },
         no_comma => {
-            hyphenated-ident => no_comma(int32),
+            hyphenated-ident => an_async_fn(int32).await,
         }
         last_one => {
             hyphenated-ident => last_one(float32, int32,),
@@ -27,7 +27,7 @@ fn comma() {}
 
 fn conflict() {}
 
-fn no_comma(_: i32) {}
+async fn an_async_fn(_: i32) {}
 
 fn last_one(_: f32, _: i32) {}
 

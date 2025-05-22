@@ -287,9 +287,9 @@ fn call_or_more_cases(
                                 }),
                             );
                         }
-                        let mut iter = group.stream().into_iter();
+                        let mut group_tokens = group.stream().into_iter();
                         'group_stream: loop {
-                            let Some(tree) = iter.next() else {
+                            let Some(tree) = group_tokens.next() else {
                                 break 'group_stream;
                             };
                             match tree {
@@ -303,7 +303,7 @@ fn call_or_more_cases(
                                 TokenTree::Punct(ref punct) => match punct.as_char() {
                                     ',' => {}
                                     '#' => {
-                                        let Some(tree) = iter.next() else {
+                                        let Some(tree) = group_tokens.next() else {
                                             panic!("OSC argument list ends in a hashtag")
                                         };
                                         let TokenTree::Ident(id) = tree else {
@@ -322,12 +322,27 @@ fn call_or_more_cases(
                                 ),
                             }
                         }
+                        let fn_is_async = iter.next().and_then(|tree| match tree {
+                            TokenTree::Punct(punct) => match punct.as_char() {
+                                ',' => None,
+                                '.' => {
+                                    let tree = iter.next()?;
+                                    let TokenTree::Ident(id) = tree else {
+                                        panic!("Unrecognized syntax after a function call at the end of an OSC route")
+                                    };
+                                    Some(id)
+                                },
+                                _ => panic!("Unrecognized syntax after a function call at the end of an OSC route"),
+                            }
+                            _ => panic!("Unrecognized syntax after a function call at the end of an OSC route"),
+                        });
                         let overwritten = containers.insert(
                             to_match.clone(),
                             MaybeLeaf::Leaf {
                                 fn_path_head,
                                 fn_path_tail,
                                 fn_args,
+                                fn_is_async,
                             },
                         );
                         if let Some(overwritten) = overwritten {
@@ -432,6 +447,7 @@ pub(crate) enum MaybeLeaf {
         fn_path_head: Ident,
         fn_path_tail: Vec<Ident>,
         fn_args: Vec<Arg>,
+        fn_is_async: Option<Ident>,
     },
     Subtree(Hierarchy),
 }
@@ -455,6 +471,7 @@ pub(crate) enum ParserState {
         fn_path_head: Ident,
         fn_path_tail: Vec<Ident>,
         fn_args: Vec<Arg>,
+        fn_is_async: Option<Ident>,
     },
     Incomplete(Parser),
 }
@@ -504,121 +521,139 @@ impl Parser {
                             fn_path_head,
                             fn_path_tail,
                             fn_args,
+                            fn_is_async,
                         } => {
-                            let () = match_body.push(TokenTree::Ident(fn_path_head));
-                            let () = match_body.extend(fn_path_tail.into_iter().flat_map(|id| {
-                                [
-                                    TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                                    TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                    TokenTree::Ident(id),
-                                ]
-                            }));
-                            let () =
-                                match_body.extend(core::iter::once(TokenTree::Group(Group::new(
-                                    Delimiter::Parenthesis,
-                                    TokenStream::from_iter(fn_args.into_iter().flat_map(|arg| {
-                                        (match arg {
-                                            Arg::Int32 => vec![
-                                                TokenTree::Ident(Ident::new(
-                                                    "i32",
-                                                    Span::call_site(),
-                                                )),
-                                                TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                                                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                                TokenTree::Ident(Ident::new(
-                                                    "from_be_bytes",
-                                                    Span::call_site(),
-                                                )),
-                                                TokenTree::Group(Group::new(
-                                                    Delimiter::Parenthesis,
-                                                    TokenStream::from_iter(core::iter::once(
-                                                        TokenTree::Group(Group::new(
-                                                            Delimiter::Bracket,
-                                                            TokenStream::from_iter(
-                                                                core::iter::repeat_n([
-                                                                    TokenTree::Ident(Ident::new(
-                                                                        "next_byte",
-                                                                        Span::call_site(),
-                                                                    )),
-                                                                    TokenTree::Group(Group::new(
-                                                                        Delimiter::Parenthesis,
-                                                                        TokenStream::new(),
-                                                                    )),
-                                                                    TokenTree::Punct(Punct::new(
-                                                                        '.',
-                                                                        Spacing::Alone,
-                                                                    )),
-                                                                    TokenTree::Ident(Ident::new(
-                                                                        "await",
-                                                                        Span::call_site(),
-                                                                    )),
-                                                                    TokenTree::Punct(Punct::new(
-                                                                        ',',
-                                                                        Spacing::Alone,
-                                                                    )),
-                                                                ], 4)
-                                                                .flatten(),
-                                                            ),
+                            let () = match_body.push(TokenTree::Group(Group::new(
+                                Delimiter::Brace,
+                                TokenStream::from_iter(
+                                    [
+                                        TokenTree::Ident(Ident::new("let", Span::call_site())),
+                                        TokenTree::Group(Group::new(
+                                            Delimiter::Parenthesis,
+                                            TokenStream::new(),
+                                        )),
+                                        TokenTree::Punct(Punct::new('=', Spacing::Alone)),
+                                        TokenTree::Ident(fn_path_head),
+                                    ]
+                                    .into_iter()
+                                    .chain(fn_path_tail.into_iter().flat_map(|id| {
+                                        [
+                                            TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                                            TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                                            TokenTree::Ident(id),
+                                        ]
+                                    }))
+                                    .chain(core::iter::once(TokenTree::Group(Group::new(
+                                        Delimiter::Parenthesis,
+                                        TokenStream::from_iter(fn_args.into_iter().flat_map(
+                                            |arg| {
+                                                (match arg {
+                                                    Arg::Int32 => vec![
+                                                        TokenTree::Ident(Ident::new(
+                                                            "i32",
+                                                            Span::call_site(),
                                                         )),
-                                                    )),
-                                                )),
-                                            ],
-                                            Arg::Float32 => vec![
-                                                TokenTree::Ident(Ident::new(
-                                                    "f32",
-                                                    Span::call_site(),
-                                                )),
-                                                TokenTree::Punct(Punct::new(':', Spacing::Joint)),
-                                                TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                                TokenTree::Ident(Ident::new(
-                                                    "from_be_bytes",
-                                                    Span::call_site(),
-                                                )),
-                                                TokenTree::Group(Group::new(
-                                                    Delimiter::Parenthesis,
-                                                    TokenStream::from_iter(core::iter::once(
-                                                        TokenTree::Group(Group::new(
-                                                            Delimiter::Bracket,
-                                                            TokenStream::from_iter(
-                                                                core::iter::repeat_n([
-                                                                    TokenTree::Ident(Ident::new(
-                                                                        "next_byte",
-                                                                        Span::call_site(),
-                                                                    )),
-                                                                    TokenTree::Group(Group::new(
-                                                                        Delimiter::Parenthesis,
-                                                                        TokenStream::new(),
-                                                                    )),
-                                                                    TokenTree::Punct(Punct::new(
-                                                                        '.',
-                                                                        Spacing::Alone,
-                                                                    )),
-                                                                    TokenTree::Ident(Ident::new(
-                                                                        "await",
-                                                                        Span::call_site(),
-                                                                    )),
-                                                                    TokenTree::Punct(Punct::new(
-                                                                        ',',
-                                                                        Spacing::Alone,
-                                                                    )),
-                                                                ], 4)
-                                                                .flatten(),
-                                                            ),
+                                                        TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                                                        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                                                        TokenTree::Ident(Ident::new(
+                                                            "from_be_bytes",
+                                                            Span::call_site(),
                                                         )),
-                                                    )),
-                                                )),
-                                            ],
-                                            Arg::Env(name) => vec![TokenTree::Ident(name)],
-                                        })
-                                        .into_iter()
-                                        .chain(
-                                            core::iter::once(TokenTree::Punct(Punct::new(
-                                                ',',
-                                                Spacing::Alone,
-                                            ))),
-                                        )
-                                    })),
-                                ))));
+                                                        TokenTree::Group(Group::new(
+                                                            Delimiter::Parenthesis,
+                                                            TokenStream::from_iter(core::iter::once(
+                                                                TokenTree::Group(Group::new(
+                                                                    Delimiter::Bracket,
+                                                                    TokenStream::from_iter(
+                                                                        core::iter::repeat_n([
+                                                                            TokenTree::Ident(Ident::new(
+                                                                                "next_byte",
+                                                                                Span::call_site(),
+                                                                            )),
+                                                                            TokenTree::Group(Group::new(
+                                                                                Delimiter::Parenthesis,
+                                                                                TokenStream::new(),
+                                                                            )),
+                                                                            TokenTree::Punct(Punct::new(
+                                                                                '.',
+                                                                                Spacing::Alone,
+                                                                            )),
+                                                                            TokenTree::Ident(Ident::new(
+                                                                                "await",
+                                                                                Span::call_site(),
+                                                                            )),
+                                                                            TokenTree::Punct(Punct::new(
+                                                                                ',',
+                                                                                Spacing::Alone,
+                                                                            )),
+                                                                        ], 4)
+                                                                        .flatten(),
+                                                                    ),
+                                                                )),
+                                                            )),
+                                                        )),
+                                                    ],
+                                                    Arg::Float32 => vec![
+                                                        TokenTree::Ident(Ident::new(
+                                                            "f32",
+                                                            Span::call_site(),
+                                                        )),
+                                                        TokenTree::Punct(Punct::new(':', Spacing::Joint)),
+                                                        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+                                                        TokenTree::Ident(Ident::new(
+                                                            "from_be_bytes",
+                                                            Span::call_site(),
+                                                        )),
+                                                        TokenTree::Group(Group::new(
+                                                            Delimiter::Parenthesis,
+                                                            TokenStream::from_iter(core::iter::once(
+                                                                TokenTree::Group(Group::new(
+                                                                    Delimiter::Bracket,
+                                                                    TokenStream::from_iter(
+                                                                        core::iter::repeat_n([
+                                                                            TokenTree::Ident(Ident::new(
+                                                                                "next_byte",
+                                                                                Span::call_site(),
+                                                                            )),
+                                                                            TokenTree::Group(Group::new(
+                                                                                Delimiter::Parenthesis,
+                                                                                TokenStream::new(),
+                                                                            )),
+                                                                            TokenTree::Punct(Punct::new(
+                                                                                '.',
+                                                                                Spacing::Alone,
+                                                                            )),
+                                                                            TokenTree::Ident(Ident::new(
+                                                                                "await",
+                                                                                Span::call_site(),
+                                                                            )),
+                                                                            TokenTree::Punct(Punct::new(
+                                                                                ',',
+                                                                                Spacing::Alone,
+                                                                            )),
+                                                                        ], 4)
+                                                                        .flatten(),
+                                                                    ),
+                                                                )),
+                                                            )),
+                                                        )),
+                                                    ],
+                                                    Arg::Env(name) => vec![TokenTree::Ident(name)],
+                                                })
+                                                .into_iter()
+                                                .chain(core::iter::once(TokenTree::Punct(
+                                                    Punct::new(',', Spacing::Alone),
+                                                )))
+                                            },
+                                        )),
+                                    ))))
+                                    .chain(fn_is_async.into_iter().flat_map(|await_ident| [TokenTree::Punct(Punct::new('.', Spacing::Alone)), TokenTree::Ident(await_ident)]))
+                                    .chain(core::iter::once(TokenTree::Punct(Punct::new(
+                                        ';',
+                                        Spacing::Alone,
+                                    )))),
+                                ),
+                            )));
                         }
                         ParserState::Incomplete(parser) => {
                             let () = match_body.extend(parser.into_tokens());
@@ -870,10 +905,12 @@ fn parse_slash_etc(
             fn_path_head,
             fn_path_tail,
             fn_args,
+            fn_is_async,
         } => call_leaf(
             fn_path_head,
             fn_path_tail,
             fn_args,
+            fn_is_async,
             Pattern::ByteChar(b'/'),
             cases,
             so_far,
@@ -889,6 +926,7 @@ fn call_leaf(
     fn_path_head: Ident,
     fn_path_tail: Vec<Ident>,
     fn_args: Vec<Arg>,
+    fn_is_async: Option<Ident>,
     pattern: Pattern,
     cases: &mut BTreeMap<Pattern, ParserState>,
     so_far: String,
@@ -899,6 +937,7 @@ fn call_leaf(
                 fn_path_head,
                 fn_path_tail,
                 fn_args,
+                fn_is_async,
             });
         }
         Entry::Occupied(occupied) => panic!(
