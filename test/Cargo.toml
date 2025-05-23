@@ -2,6 +2,7 @@
 name = "osc-router-test"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
 osc-router = { path = "../macro" }
