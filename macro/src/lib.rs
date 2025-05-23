@@ -31,10 +31,14 @@ pub fn osc(ts: TokenStream) -> TokenStream {
         ))));
     }
     let () = acc.extend([
-        TokenTree::Ident(Ident::new("Restart", Span::call_site())),
+        TokenTree::Ident(Ident::new("AsyncUnit", Span::call_site())),
         TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-        TokenTree::Ident(Ident::new("FnMut", Span::call_site())),
+        TokenTree::Ident(Ident::new("Future", Span::call_site())),
+        TokenTree::Punct(Punct::new('<', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("Output", Span::call_site())),
+        TokenTree::Punct(Punct::new('=', Spacing::Alone)),
         TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+        TokenTree::Punct(Punct::new('>', Spacing::Alone)),
         TokenTree::Punct(Punct::new(',', Spacing::Alone)),
         TokenTree::Ident(Ident::new("AsyncByte", Span::call_site())),
         TokenTree::Punct(Punct::new(':', Spacing::Alone)),
@@ -44,6 +48,14 @@ pub fn osc(ts: TokenStream) -> TokenStream {
         TokenTree::Punct(Punct::new('=', Spacing::Alone)),
         TokenTree::Ident(Ident::new("u8", Span::call_site())),
         TokenTree::Punct(Punct::new('>', Spacing::Alone)),
+        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("Restart", Span::call_site())),
+        TokenTree::Punct(Punct::new(':', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("FnMut", Span::call_site())),
+        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+        TokenTree::Punct(Punct::new('-', Spacing::Joint)),
+        TokenTree::Punct(Punct::new('>', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("AsyncUnit", Span::call_site())),
         TokenTree::Punct(Punct::new(',', Spacing::Alone)),
         TokenTree::Ident(Ident::new("NextByte", Span::call_site())),
         TokenTree::Punct(Punct::new(':', Spacing::Alone)),
@@ -100,14 +112,26 @@ pub fn osc(ts: TokenStream) -> TokenStream {
                 TokenTree::Ident(Ident::new("loop", Span::call_site())),
                 TokenTree::Group(Group::new(
                     Delimiter::Brace,
-                    TokenStream::from_iter([
-                        TokenTree::Ident(Ident::new("let", Span::call_site())),
-                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                        TokenTree::Punct(Punct::new('=', Spacing::Alone)),
-                        TokenTree::Ident(Ident::new("restart", Span::call_site())),
-                        TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
-                        TokenTree::Punct(Punct::new(';', Spacing::Alone)),
-                    ].into_iter().chain(parser.into_tokens())),
+                    TokenStream::from_iter(
+                        [
+                            TokenTree::Ident(Ident::new("let", Span::call_site())),
+                            TokenTree::Group(Group::new(
+                                Delimiter::Parenthesis,
+                                TokenStream::new(),
+                            )),
+                            TokenTree::Punct(Punct::new('=', Spacing::Alone)),
+                            TokenTree::Ident(Ident::new("restart", Span::call_site())),
+                            TokenTree::Group(Group::new(
+                                Delimiter::Parenthesis,
+                                TokenStream::new(),
+                            )),
+                            TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                            TokenTree::Ident(Ident::new("await", Span::call_site())),
+                            TokenTree::Punct(Punct::new(';', Spacing::Alone)),
+                        ]
+                        .into_iter()
+                        .chain(parser.into_tokens()),
+                    ),
                 )),
             ]),
         )),
