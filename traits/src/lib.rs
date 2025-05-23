@@ -1,3 +1,5 @@
+#![no_std]
+
 pub trait Send {
     fn send_osc<AsyncUnit: Future<Output = ()>, F: FnMut(u8) -> AsyncUnit>(
         &self,

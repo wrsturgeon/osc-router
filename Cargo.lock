@@ -4,11 +4,11 @@ version = 4
 
 [[package]]
 name = "osc-router"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "osc-router-test"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "osc-router",
  "osc-router-traits",
@@ -16,4 +16,4 @@ dependencies = [
 
 [[package]]
 name = "osc-router-traits"
-version = "0.3.0"
+version = "0.3.1"
