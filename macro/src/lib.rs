@@ -136,6 +136,8 @@ pub fn osc(ts: TokenStream) -> TokenStream {
             Delimiter::Parenthesis,
             TokenStream::from_iter([
                 TokenTree::Punct(Punct::new('&', Spacing::Alone)),
+                TokenTree::Punct(Punct::new('\'', Spacing::Joint)),
+                TokenTree::Ident(Ident::new("static", Span::call_site())),
                 TokenTree::Ident(Ident::new("str", Span::call_site())),
                 TokenTree::Punct(Punct::new(',', Spacing::Alone)),
                 TokenTree::Ident(Ident::new("u8", Span::call_site())),
