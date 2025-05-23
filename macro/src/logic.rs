@@ -538,7 +538,7 @@ impl Parser {
                                         TokenTree::Ident(Ident::new("osc_router_traits", Span::call_site())),
                                         TokenTree::Punct(Punct::new(':', Spacing::Joint)),
                                         TokenTree::Punct(Punct::new(':', Spacing::Alone)),
-                                        TokenTree::Ident(Ident::new("Osc", Span::call_site())),
+                                        TokenTree::Ident(Ident::new("Send", Span::call_site())),
                                         TokenTree::Punct(Punct::new(':', Spacing::Joint)),
                                         TokenTree::Punct(Punct::new(':', Spacing::Alone)),
                                         TokenTree::Ident(Ident::new("send_osc", Span::call_site())),

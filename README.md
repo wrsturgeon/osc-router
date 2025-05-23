@@ -11,12 +11,12 @@ osc_router::osc! {
     #[inline]
     pub async fn your_fn_name() -> ! {
         pre => {
-            a => f(),
-            b => g(int32),
-            c => h(float32, int32),
+            a => f(int32, float32),
         }
         prefix => {
-            hello => goodbye(),
+            #i => {
+                print => path::to::print_u8(#i),
+            }
         }
     }
 }
@@ -27,126 +27,191 @@ into this:
 ```rust
 #[inline]
 pub async fn your_fn_name<
-    AsyncByte: Future<Output = u8>,
-    NextByte: FnMut() -> AsyncByte,
-    Error: FnMut(&str, u8),
->(mut next_byte: NextByte, mut error: Error) -> ! {
+    AsyncRestart: Future<Output = ()>,
+    AsyncRecvByte: Future<Output = u8>,
+    AsyncSendByte: Future<Output = ()>,
+    AsyncError: Future<Output = ()>,
+    Restart: FnMut() -> AsyncRestart,
+    RecvByte: FnMut() -> AsyncRecvByte,
+    SendByte: FnMut(u8) -> AsyncSendByte,
+    Error: FnMut(&str, u8) -> AsyncError,
+>(
+    ::osc_router_traits::Driver {
+        mut restart,
+        mut recv_byte,
+        mut send_byte,
+        mut error,
+    }: ::osc_router_traits::Driver<
+        AsyncRestart,
+        AsyncRecvByte,
+        AsyncSendByte,
+        AsyncError,
+        Restart,
+        RecvByte,
+        SendByte,
+        Error,
+    >,
+) -> ! {
     loop {
-        match next_byte().await {
+        let () = restart().await;
+        match recv_byte().await {
             b'/' => {
-                match next_byte().await {
+                match recv_byte().await {
                     b'p' => {
-                        match next_byte().await {
+                        match recv_byte().await {
                             b'r' => {
-                                match next_byte().await {
+                                match recv_byte().await {
                                     b'e' => {
-                                        match next_byte().await {
+                                        match recv_byte().await {
                                             b'/' => {
-                                                match next_byte().await {
+                                                match recv_byte().await {
                                                     b'a' => {
-                                                        match next_byte().await {
-                                                            b'/' => f(),
-                                                            unexpected => error("/pre/a", unexpected),
-                                                        }
-                                                    }
-                                                    b'b' => {
-                                                        match next_byte().await {
+                                                        match recv_byte().await {
                                                             b'/' => {
-                                                                g(
-                                                                    i32::from_be_bytes([
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                    ]),
-                                                                )
+                                                                let () = ::osc_router_traits::Send::send_osc(
+                                                                        &f(
+                                                                            i32::from_be_bytes([
+                                                                                recv_byte().await,
+                                                                                recv_byte().await,
+                                                                                recv_byte().await,
+                                                                                recv_byte().await,
+                                                                            ]),
+                                                                            f32::from_be_bytes([
+                                                                                recv_byte().await,
+                                                                                recv_byte().await,
+                                                                                recv_byte().await,
+                                                                                recv_byte().await,
+                                                                            ]),
+                                                                        ),
+                                                                        &mut send_byte,
+                                                                    )
+                                                                    .await;
                                                             }
-                                                            unexpected => error("/pre/b", unexpected),
+                                                            unexpected => {
+                                                                let () = error("/pre/a", unexpected).await;
+                                                            }
                                                         }
                                                     }
-                                                    b'c' => {
-                                                        match next_byte().await {
-                                                            b'/' => {
-                                                                h(
-                                                                    f32::from_be_bytes([
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                    ]),
-                                                                    i32::from_be_bytes([
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                        next_byte().await,
-                                                                    ]),
-                                                                )
-                                                            }
-                                                            unexpected => error("/pre/c", unexpected),
-                                                        }
+                                                    unexpected => {
+                                                        let () = error("/pre/", unexpected).await;
                                                     }
-                                                    unexpected => error("/pre/", unexpected),
                                                 }
                                             }
                                             b'f' => {
-                                                match next_byte().await {
+                                                match recv_byte().await {
                                                     b'i' => {
-                                                        match next_byte().await {
+                                                        match recv_byte().await {
                                                             b'x' => {
-                                                                match next_byte().await {
+                                                                match recv_byte().await {
                                                                     b'/' => {
-                                                                        match next_byte().await {
-                                                                            b'h' => {
-                                                                                match next_byte().await {
-                                                                                    b'e' => {
-                                                                                        match next_byte().await {
-                                                                                            b'l' => {
-                                                                                                match next_byte().await {
-                                                                                                    b'l' => {
-                                                                                                        match next_byte().await {
-                                                                                                            b'o' => {
-                                                                                                                match next_byte().await {
-                                                                                                                    b'/' => goodbye(),
-                                                                                                                    unexpected => error("/prefix/hello", unexpected),
+                                                                        match recv_byte().await {
+                                                                            digit @ (b'0'..=b'9') => {
+                                                                                let mut i: u8 = digit - b'0';
+                                                                                'i: loop {
+                                                                                    match recv_byte().await {
+                                                                                        digit @ (b'0'..=b'9') => {
+                                                                                            i = 10u8 * i + (digit - b'0');
+                                                                                            continue 'i;
+                                                                                        }
+                                                                                        b'/' => {
+                                                                                            match recv_byte().await {
+                                                                                                b'p' => {
+                                                                                                    match recv_byte().await {
+                                                                                                        b'r' => {
+                                                                                                            match recv_byte().await {
+                                                                                                                b'i' => {
+                                                                                                                    match recv_byte().await {
+                                                                                                                        b'n' => {
+                                                                                                                            match recv_byte().await {
+                                                                                                                                b't' => {
+                                                                                                                                    match recv_byte().await {
+                                                                                                                                        b'/' => {
+                                                                                                                                            let () = ::osc_router_traits::Send::send_osc(
+                                                                                                                                                    &path::to::print_u8(i),
+                                                                                                                                                    &mut send_byte,
+                                                                                                                                                )
+                                                                                                                                                .await;
+                                                                                                                                        }
+                                                                                                                                        unexpected => {
+                                                                                                                                            let () = error("/prefix/#i/print", unexpected).await;
+                                                                                                                                        }
+                                                                                                                                    }
+                                                                                                                                }
+                                                                                                                                unexpected => {
+                                                                                                                                    let () = error("/prefix/#i/prin", unexpected).await;
+                                                                                                                                }
+                                                                                                                            }
+                                                                                                                        }
+                                                                                                                        unexpected => {
+                                                                                                                            let () = error("/prefix/#i/pri", unexpected).await;
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                }
+                                                                                                                unexpected => {
+                                                                                                                    let () = error("/prefix/#i/pr", unexpected).await;
                                                                                                                 }
                                                                                                             }
-                                                                                                            unexpected => error("/prefix/hell", unexpected),
+                                                                                                        }
+                                                                                                        unexpected => {
+                                                                                                            let () = error("/prefix/#i/p", unexpected).await;
                                                                                                         }
                                                                                                     }
-                                                                                                    unexpected => error("/prefix/hel", unexpected),
+                                                                                                }
+                                                                                                unexpected => {
+                                                                                                    let () = error("/prefix/#i/", unexpected).await;
                                                                                                 }
                                                                                             }
-                                                                                            unexpected => error("/prefix/he", unexpected),
+                                                                                        }
+                                                                                        unexpected => {
+                                                                                            let () = error("/prefix/#i", unexpected).await;
                                                                                         }
                                                                                     }
-                                                                                    unexpected => error("/prefix/h", unexpected),
+                                                                                    break 'i;
                                                                                 }
                                                                             }
-                                                                            unexpected => error("/prefix/", unexpected),
+                                                                            unexpected => {
+                                                                                let () = error("/prefix/", unexpected).await;
+                                                                            }
                                                                         }
                                                                     }
-                                                                    unexpected => error("/prefix", unexpected),
+                                                                    unexpected => {
+                                                                        let () = error("/prefix", unexpected).await;
+                                                                    }
                                                                 }
                                                             }
-                                                            unexpected => error("/prefi", unexpected),
+                                                            unexpected => {
+                                                                let () = error("/prefi", unexpected).await;
+                                                            }
                                                         }
                                                     }
-                                                    unexpected => error("/pref", unexpected),
+                                                    unexpected => {
+                                                        let () = error("/pref", unexpected).await;
+                                                    }
                                                 }
                                             }
-                                            unexpected => error("/pre", unexpected),
+                                            unexpected => {
+                                                let () = error("/pre", unexpected).await;
+                                            }
                                         }
                                     }
-                                    unexpected => error("/pr", unexpected),
+                                    unexpected => {
+                                        let () = error("/pr", unexpected).await;
+                                    }
                                 }
                             }
-                            unexpected => error("/p", unexpected),
+                            unexpected => {
+                                let () = error("/p", unexpected).await;
+                            }
                         }
                     }
-                    unexpected => error("/", unexpected),
+                    unexpected => {
+                        let () = error("/", unexpected).await;
+                    }
                 }
             }
-            unexpected => error("", unexpected),
+            unexpected => {
+                let () = error("", unexpected).await;
+            }
         }
     }
 }

@@ -37,20 +37,20 @@ osc_router::osc! {
     #[inline]
     pub async fn your_fn_name() -> ! {
         pre => {
-            a => f(),
-            b => g(int32),
-            c => h(float32, int32),
+            a => f(int32, float32),
         }
         prefix => {
-            hello => goodbye(),
+            #i => {
+                print => path::to::print_u8(#i),
+            }
         }
     }
 }
 
-fn f() {}
+fn f(_: i32, _: f32) {}
 
-fn g(_: i32) {}
-
-fn h(_: f32, _: i32) {}
-
-fn goodbye() {}
+mod path {
+    pub mod to {
+        pub fn print_u8(_: u8) {}
+    }
+}
