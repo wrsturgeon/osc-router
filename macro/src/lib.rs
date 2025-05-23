@@ -77,6 +77,9 @@ pub fn osc(ts: TokenStream) -> TokenStream {
                 TokenTree::Ident(Ident::new("u8", Span::call_site())),
             ]),
         )),
+        TokenTree::Punct(Punct::new('-', Spacing::Joint)),
+        TokenTree::Punct(Punct::new('>', Spacing::Alone)),
+        TokenTree::Ident(Ident::new("AsyncUnit", Span::call_site())),
         TokenTree::Punct(Punct::new('>', Spacing::Alone)),
         TokenTree::Group(Group::new(Delimiter::Parenthesis, {
             if !arg_stream.is_empty() {

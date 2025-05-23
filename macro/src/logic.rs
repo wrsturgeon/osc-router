@@ -866,13 +866,24 @@ impl Parser {
         )));
         let () = match_body.push(TokenTree::Punct(Punct::new('=', Spacing::Joint)));
         let () = match_body.push(TokenTree::Punct(Punct::new('>', Spacing::Alone)));
-        let () = match_body.push(TokenTree::Ident(Ident::new("error", Span::call_site())));
         let () = match_body.push(TokenTree::Group(Group::new(
-            Delimiter::Parenthesis,
+            Delimiter::Brace,
             TokenStream::from_iter([
-                TokenTree::Literal(Literal::string(&catch)),
-                TokenTree::Punct(Punct::new(',', Spacing::Alone)),
-                TokenTree::Ident(Ident::new("unexpected", Span::call_site())),
+                TokenTree::Ident(Ident::new("let", Span::call_site())),
+                TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new())),
+                TokenTree::Punct(Punct::new('=', Spacing::Alone)),
+                TokenTree::Ident(Ident::new("error", Span::call_site())),
+                TokenTree::Group(Group::new(
+                    Delimiter::Parenthesis,
+                    TokenStream::from_iter([
+                        TokenTree::Literal(Literal::string(&catch)),
+                        TokenTree::Punct(Punct::new(',', Spacing::Alone)),
+                        TokenTree::Ident(Ident::new("unexpected", Span::call_site())),
+                    ]),
+                )),
+                TokenTree::Punct(Punct::new('.', Spacing::Alone)),
+                TokenTree::Ident(Ident::new("await", Span::call_site())),
+                TokenTree::Punct(Punct::new(';', Spacing::Alone)),
             ]),
         )));
         match_body
