@@ -1,9 +1,7 @@
 [package]
-name = "osc-router"
+name = "osc-router-traits"
 version = "0.3.0"
 edition = "2024"
 description = "Zero-copy OSC router for `no_std` Rust"
 license = "MPL-2.0"
 
-[lib]
-proc-macro = true
